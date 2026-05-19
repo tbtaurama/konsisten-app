@@ -8,19 +8,18 @@ import streamlit as st
 # ==========================================
 # KONFIGURASI SISTEM & ATURAN BISNIS
 # ==========================================
-st.set_page_config(page_title="RESET - Pro Mobile v10", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="RESET - Pro Mobile v11", layout="centered", initial_sidebar_state="collapsed")
 
 WIB = ZoneInfo("Asia/Jakarta")
 
+# REVISI: Level dipangkas hanya sampai Level 3
 LEVELS = {
     1: {"days": 3},
     2: {"days": 7},
-    3: {"days": 14},
-    4: {"days": 21},
-    5: {"days": 45}
+    3: {"days": 14}
 }
 REWARD = 10
-DB_NAME = "reset_v10.db"
+DB_NAME = "reset_v11.db"
 
 # ==========================================
 # DATABASE SETUP
@@ -121,14 +120,16 @@ def advance_one_day(target_date, status):
         if score >= passing_grade:
             pct = score / max_score
             badge_type = "Umum 🥉"
-            if lvl in [4, 5]:
+            # Hadiah premium sekarang dialihkan ke Level 3 karena ini adalah level akhir
+            if lvl == 3:
                 if pct == 1.0: badge_type = "Platinum 👑"
                 elif pct >= 0.9: badge_type = "Premium 🌟"
             
             conn.execute("INSERT OR REPLACE INTO badges VALUES (?, ?)", (lvl, badge_type))
-            if lvl in [4, 5] and pct >= 0.9: just_graduated = True
+            if lvl == 3 and pct >= 0.9: just_graduated = True
             
-            if lvl < 5:
+            # Pengecekan batas level diubah ke Level 3
+            if lvl < 3:
                 lvl += 1
                 day_t = 1
                 score = 0
@@ -142,289 +143,4 @@ def advance_one_day(target_date, status):
     else:
         day_t += 1
         
-    conn.execute("UPDATE state SET current_level=?, current_day=?, score=?, last_processed_date=? WHERE id=1", (lvl, day_t, score, target_date.isoformat()))
-    conn.commit()
-    conn.close()
-    if just_graduated: st.session_state['show_share'] = True
-
-def process_missed_days():
-    state = get_state()
-    if not state or state['completed']: return
-    today = datetime.datetime.now(WIB).date()
-    last_date = state['last_date']
-    
-    while last_date < today - datetime.timedelta(days=1):
-        target_missed_date = last_date + datetime.timedelta(days=1)
-        advance_one_day(target_missed_date, 'missed')
-        last_date = target_missed_date
-
-# ==========================================
-# KOMPONEN VISUAL (STEPPER & PROGRESS)
-# ==========================================
-def render_connected_stepper(current_lvl):
-    """Render Stepper Progress Bar sesuai lampiran (Lingkaran bersambung garis)"""
-    css = """
-    <style>
-    @keyframes pulse-green {
-        0% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0.7); }
-        70% { box-shadow: 0 0 0 8px rgba(0, 204, 0, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0); }
-    }
-    .stepper-wrapper {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin: 10px auto 30px auto;
-        max-width: 100%;
-        position: relative;
-    }
-    .step {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        flex: 1;
-        z-index: 2;
-    }
-    .step::after {
-        content: "";
-        position: absolute;
-        top: 15px; /* Tengah lingkaran */
-        left: 50%;
-        width: 100%;
-        height: 4px;
-        background-color: #444; /* Garis abu-abu */
-        z-index: -1;
-    }
-    .step:last-child::after {
-        display: none; /* Hilangkan garis di item terakhir */
-    }
-    .step.completed::after {
-        background-color: #00cc00; /* Garis hijau jika sudah lewat */
-    }
-    .step-circle {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        background-color: #444;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 14px;
-    }
-    .step.completed .step-circle {
-        background-color: #00cc00; /* Lingkaran hijau */
-    }
-    .step.active .step-circle {
-        background-color: #00cc00;
-        animation: pulse-green 1.5s infinite; /* Lingkaran hijau berkedip */
-    }
-    .step-label {
-        font-size: 11px;
-        margin-top: 8px;
-        font-weight: 600;
-        color: #888;
-    }
-    .step.active .step-label, .step.completed .step-label {
-        color: #ddd;
-    }
-    </style>
-    """
-    
-    html = "<div class='stepper-wrapper'>"
-    for i in range(1, 6):
-        if i < current_lvl: step_class = "step completed"
-        elif i == current_lvl: step_class = "step active"
-        else: step_class = "step"
-            
-        html += f"""
-        <div class='{step_class}'>
-            <div class='step-circle'>{i}</div>
-            <div class='step-label'>Lvl {i}</div>
-        </div>
-        """
-    html += "</div>"
-    st.markdown(css + html, unsafe_allow_html=True)
-
-def render_eye_catching_progress(day_t, duration):
-    """Render Banner Progress Hari yang jauh lebih eye-catching"""
-    html = f"""
-    <div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 1px solid #3a62a8;">
-        <p style="margin: 0; color: #a8c2f0; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Status Perjalanan</p>
-        <h3 style="margin: 5px 0 0 0; color: white; font-size: 24px;">HARI KE-{day_t} <span style="color:#a8c2f0; font-size: 18px;">dari {duration} HARI</span></h3>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-def get_prev_score(lvl, current_day):
-    if current_day <= 1: return 0
-    conn = sqlite3.connect(DB_NAME)
-    res = conn.execute("SELECT score FROM logs WHERE level=? AND day=?", (lvl, current_day - 1)).fetchone()
-    conn.close()
-    return res[0] if res else 0
-
-# ==========================================
-# UI FRONTEND UTAMA
-# ==========================================
-st.markdown("<style>h1, h2, h3, h4, h5 {text-align: center;}</style>", unsafe_allow_html=True)
-
-if 'system_alert' in st.session_state:
-    st.error(st.session_state['system_alert'])
-    del st.session_state['system_alert']
-
-profile = get_profile()
-
-if not profile:
-    st.title("⬛ R E S E T")
-    st.write("Silakan isi data untuk masuk ke arena eksekusi.")
-    with st.form("onboarding"):
-        name = st.text_input("Nama Panggilan")
-        theme = st.selectbox("Tema", ["Olah Raga", "Membuat Karya", "Wirausaha (Bisnis)", "Belajar/Membaca", "Mengerjakan Proyek", "Tugas Sekolah", "Cari Pekerjaan Baru", "Orang Tua & Anak", "Lainnya"])
-        goal = st.text_input("Tujuan (Maks 100 Karakter)", max_chars=100)
-        if st.form_submit_button("SUBMIT", use_container_width=True) and name and goal:
-            save_profile(name, theme, goal)
-            st.rerun()
-else:
-    name, theme, goal = profile
-    process_missed_days()
-    state = get_state()
-    
-    # ----------------------------------------
-    # SIDEBAR: QA / GOD MODE CONTROLS
-    # ----------------------------------------
-    with st.sidebar:
-        st.error("🛠️ **QA / GOD MODE**")
-        if not state['completed']:
-            next_sim_date = state['last_date'] + datetime.timedelta(days=1)
-            st.write(f"Target Injeksi: Hari ke-{state['day']} (Level {state['level']})")
-            c1, c2 = st.columns(2)
-            if c1.button("✅ Check-In", type="primary", use_container_width=True):
-                advance_one_day(next_sim_date, 'checked_in')
-                st.rerun()
-            if c2.button("❌ Bolos", type="secondary", use_container_width=True):
-                advance_one_day(next_sim_date, 'missed')
-                st.rerun()
-        st.markdown("---")
-        if st.button("♻️ Nuke Database", use_container_width=True):
-            hard_reset_db()
-            st.rerun()
-
-    # ----------------------------------------
-    # MAIN DASHBOARD 
-    # ----------------------------------------
-    st.caption(f"AGENT: **{name.upper()}** | SEKTOR: **{theme.upper()}**")
-    st.markdown(f"<h4 style='color: #aaa; margin-bottom: 25px;'><i>\"{goal}\"</i></h4>", unsafe_allow_html=True)
-    
-    if state['completed']:
-        st.success("🏁 PROTOKOL SELESAI. ANDA TELAH MENGUASAI DIRI ANDA SENDIRI.")
-        st.balloons()
-        
-        st.markdown("### 🏆 SIKLUS 90 HARI SELESAI")
-        st.write("Silakan bagikan keberhasilan Anda atau mulai tantangan fokus baru.")
-        
-        col_end1, col_end2 = st.columns(2)
-        with col_end1:
-            whatsapp_msg = "Saya telah berhasil menjadi orang yang konsisten! %23RESET90Days"
-            wa_url = f"https://api.whatsapp.com/send?text={whatsapp_msg}"
-            st.link_button("📢 Social Share", wa_url, use_container_width=True, type="primary")
-            
-        with col_end2:
-            if st.button("🔄 Ganti Tantangan", use_container_width=True, type="secondary"):
-                reset_challenge_only()
-                st.rerun()
-        st.stop()
-        
-    else:
-        lvl = state['level']
-        day_t = state['day']
-        current_score = state['score']
-        duration = LEVELS[lvl]['days']
-        
-        # 1. UI Stepper Progress Bar (Mirip Lampiran Gambar)
-        render_connected_stepper(lvl)
-        
-        # 2. UI Banner Progress Hari yang Eye-Catching
-        render_eye_catching_progress(day_t, duration)
-        
-        # 3. Metrik Skor & Target Lulus
-        max_lvl_score = duration * REWARD
-        passing_grade = int(0.75 * max_lvl_score)
-        
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            prev_score = get_prev_score(lvl, day_t)
-            st.metric("Poin Saat Ini", current_score, delta=int(current_score - prev_score))
-        with col_m2:
-            st.metric("Target Lulus", f"{passing_grade} pts", delta=f"Max: {max_lvl_score}", delta_color="off")
-            
-        # 4. Panel Eksekusi Tombol Utama
-        now = datetime.datetime.now(WIB)
-        today = now.date()
-        is_time_valid = datetime.time(20, 0) <= now.time() <= datetime.time(23, 0)
-        
-        st.markdown("<hr style='margin-top: 10px; margin-bottom: 20px;'>", unsafe_allow_html=True)
-        st.markdown("### ⏳ PANEL EKSEKUSI")
-        
-        if state['last_date'] >= today:
-            st.success("✔️ Eksekusi harian dikonfirmasi. Kembali besok pukul 20:00 WIB.")
-        else:
-            if is_time_valid:
-                st.success("✅ Arena Terbuka. Silakan tentukan pilihan Anda.")
-            else:
-                st.warning("🔒 Arena Tertutup. Tunggu pukul 20:00 - 23:00 WIB.")
-                
-            col_b1, col_b2 = st.columns(2)
-            lbl_in = "🔥 CHECK-IN" if is_time_valid else "🔒 CHECK-IN"
-            lbl_ms = "❌ BOLOS" if is_time_valid else "🔒 BOLOS"
-            
-            if col_b1.button(lbl_in, type="primary", disabled=not is_time_valid, use_container_width=True):
-                advance_one_day(today, 'checked_in')
-                st.rerun()
-            if col_b2.button(lbl_ms, type="secondary", disabled=not is_time_valid, use_container_width=True):
-                advance_one_day(today, 'missed')
-                st.rerun()
-
-        st.markdown("---")
-        
-        # 5. Visualisasi Grafik
-        st.markdown("### 📈 TREN SKOR LEVEL INI")
-        conn = sqlite3.connect(DB_NAME)
-        df_logs = pd.read_sql_query("SELECT day, score FROM logs WHERE level=?", conn, params=(lvl,))
-        conn.close()
-        
-        if not df_logs.empty:
-            if not (state['last_date'] >= today and df_logs['day'].max() == day_t):
-                df_logs = pd.concat([df_logs, pd.DataFrame([{'day': day_t, 'score': current_score}])], ignore_index=True)
-                
-            base_chart = alt.Chart(df_logs).mark_line(point=True, strokeWidth=3).encode(
-                x=alt.X('day:Q', title="Hari ke-", scale=alt.Scale(domain=[1, duration], nice=False)),
-                y=alt.Y('score:Q', title="Poin", scale=alt.Scale(domain=[0, max_lvl_score + 10])),
-                tooltip=['day', 'score']
-            )
-            rule = alt.Chart(pd.DataFrame({'y': [passing_grade]})).mark_rule(color='red', strokeDash=[5, 5], strokeWidth=2).encode(y='y:Q')
-            st.altair_chart((base_chart + rule).properties(height=250), use_container_width=True)
-        else:
-            st.info("Belum ada data eksekusi di level ini.")
-
-    # Social Share khusus Mid-level
-    if st.session_state.get('show_share', False) and not state['completed']:
-        st.success("🎉 SELAMAT! Lulus Level Tinggi.")
-        if st.button("📢 Bagikan Pencapaian (Social Share)", use_container_width=True):
-            st.code("Saya telah berhasil menjadi orang yang konsisten! #RESET90Days", language="markdown")
-            st.session_state['show_share'] = False
-
-    st.markdown("---")
-    st.markdown("### 🎖️ GALERI LENCANA")
-    conn = sqlite3.connect(DB_NAME)
-    badges = conn.execute("SELECT level, type FROM badges ORDER BY level ASC").fetchall()
-    conn.close()
-    
-    if badges:
-        cols = st.columns(5)
-        for i, (b_lvl, b_type) in enumerate(badges):
-            with cols[i % 5]:
-                st.markdown(f"<div style='text-align:center; padding:5px; border:1px solid #555; border-radius:5px; font-size:12px;'><b>Lvl {b_lvl}</b><br>{b_type}</div>", unsafe_allow_html=True)
-    else:
-        st.caption("Belum ada lencana yang diraih.")
+    conn.execute("UPDATE state SET current_level=?, current_day=?, score=?, last_processed_date=? WHERE id=1",
