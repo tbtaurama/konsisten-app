@@ -8,7 +8,7 @@ import streamlit as st
 # ==========================================
 # KONFIGURASI SISTEM & ATURAN BISNIS
 # ==========================================
-st.set_page_config(page_title="RESET - Pro Mobile v9", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="RESET - Pro Mobile v10", layout="centered", initial_sidebar_state="collapsed")
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -20,7 +20,7 @@ LEVELS = {
     5: {"days": 45}
 }
 REWARD = 10
-DB_NAME = "reset_v9.db" # Database versi baru untuk pembaruan skema penalti
+DB_NAME = "reset_v10.db"
 
 # ==========================================
 # DATABASE SETUP
@@ -44,7 +44,6 @@ def hard_reset_db():
     init_db()
 
 def reset_challenge_only():
-    """Menghapus data konten untuk fitur Ganti Tantangan tanpa merusak struktur db"""
     conn = sqlite3.connect(DB_NAME)
     conn.execute("DELETE FROM profile")
     conn.execute("DELETE FROM state")
@@ -100,7 +99,6 @@ def advance_one_day(target_date, status):
     if status == 'checked_in':
         score += REWARD
     else:
-        # REVISI SKEMA PENALTI: Murni menggunakan variabel hari berjalan dikali 2 (t x 2)
         penalty = day_t * 2
         score = max(0, score - penalty)
         
@@ -161,27 +159,104 @@ def process_missed_days():
         last_date = target_missed_date
 
 # ==========================================
-# KOMPONEN VISUAL KHUSUS (MOBILE FRIENDLY)
+# KOMPONEN VISUAL (STEPPER & PROGRESS)
 # ==========================================
-def render_likert_progress(current_lvl):
+def render_connected_stepper(current_lvl):
+    """Render Stepper Progress Bar sesuai lampiran (Lingkaran bersambung garis)"""
     css = """
     <style>
-    @keyframes pulse { 0% {transform: scale(1); opacity:1;} 50% {transform: scale(1.2); opacity:0.7;} 100% {transform: scale(1); opacity:1;} }
-    .pulsing { animation: pulse 1.5s infinite; display: inline-block; }
-    .likert-container { display: flex; justify-content: space-between; align-items: center; max-width: 350px; margin: 0 auto 15px auto; padding: 10px; background-color: #1e1e1e; border-radius: 10px; }
-    .likert-item { text-align: center; }
-    .likert-icon { font-size: 16px; }
-    .likert-label { font-size: 10px; font-weight: bold; color: #888; margin-top: 3px; }
+    @keyframes pulse-green {
+        0% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0.7); }
+        70% { box-shadow: 0 0 0 8px rgba(0, 204, 0, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 204, 0, 0); }
+    }
+    .stepper-wrapper {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin: 10px auto 30px auto;
+        max-width: 100%;
+        position: relative;
+    }
+    .step {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        z-index: 2;
+    }
+    .step::after {
+        content: "";
+        position: absolute;
+        top: 15px; /* Tengah lingkaran */
+        left: 50%;
+        width: 100%;
+        height: 4px;
+        background-color: #444; /* Garis abu-abu */
+        z-index: -1;
+    }
+    .step:last-child::after {
+        display: none; /* Hilangkan garis di item terakhir */
+    }
+    .step.completed::after {
+        background-color: #00cc00; /* Garis hijau jika sudah lewat */
+    }
+    .step-circle {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background-color: #444;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 14px;
+    }
+    .step.completed .step-circle {
+        background-color: #00cc00; /* Lingkaran hijau */
+    }
+    .step.active .step-circle {
+        background-color: #00cc00;
+        animation: pulse-green 1.5s infinite; /* Lingkaran hijau berkedip */
+    }
+    .step-label {
+        font-size: 11px;
+        margin-top: 8px;
+        font-weight: 600;
+        color: #888;
+    }
+    .step.active .step-label, .step.completed .step-label {
+        color: #ddd;
+    }
     </style>
     """
-    html = "<div class='likert-container'>"
+    
+    html = "<div class='stepper-wrapper'>"
     for i in range(1, 6):
-        if i < current_lvl: icon, cls = "🟢", ""
-        elif i == current_lvl: icon, cls = "🟡", "pulsing"
-        else: icon, cls = "⚪", ""
-        html += f"<div class='likert-item'><div class='likert-icon {cls}'>{icon}</div><div class='likert-label'>L{i}</div></div>"
+        if i < current_lvl: step_class = "step completed"
+        elif i == current_lvl: step_class = "step active"
+        else: step_class = "step"
+            
+        html += f"""
+        <div class='{step_class}'>
+            <div class='step-circle'>{i}</div>
+            <div class='step-label'>Lvl {i}</div>
+        </div>
+        """
     html += "</div>"
     st.markdown(css + html, unsafe_allow_html=True)
+
+def render_eye_catching_progress(day_t, duration):
+    """Render Banner Progress Hari yang jauh lebih eye-catching"""
+    html = f"""
+    <div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 1px solid #3a62a8;">
+        <p style="margin: 0; color: #a8c2f0; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Status Perjalanan</p>
+        <h3 style="margin: 5px 0 0 0; color: white; font-size: 24px;">HARI KE-{day_t} <span style="color:#a8c2f0; font-size: 18px;">dari {duration} HARI</span></h3>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 def get_prev_score(lvl, current_day):
     if current_day <= 1: return 0
@@ -208,7 +283,6 @@ if not profile:
         name = st.text_input("Nama Panggilan")
         theme = st.selectbox("Tema", ["Olah Raga", "Membuat Karya", "Wirausaha (Bisnis)", "Belajar/Membaca", "Mengerjakan Proyek", "Tugas Sekolah", "Cari Pekerjaan Baru", "Orang Tua & Anak", "Lainnya"])
         goal = st.text_input("Tujuan (Maks 100 Karakter)", max_chars=100)
-        # REVISI: Mengubah kata tombol menjadi "SUBMIT"
         if st.form_submit_button("SUBMIT", use_container_width=True) and name and goal:
             save_profile(name, theme, goal)
             st.rerun()
@@ -241,9 +315,8 @@ else:
     # MAIN DASHBOARD 
     # ----------------------------------------
     st.caption(f"AGENT: **{name.upper()}** | SEKTOR: **{theme.upper()}**")
-    st.markdown(f"<h4 style='color: #aaa; margin-bottom: 20px;'><i>\"{goal}\"</i></h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color: #aaa; margin-bottom: 25px;'><i>\"{goal}\"</i></h4>", unsafe_allow_html=True)
     
-    # REVISI: KONDISI SELESAI LEVEL 5 TOTAL (90 HARI)
     if state['completed']:
         st.success("🏁 PROTOKOL SELESAI. ANDA TELAH MENGUASAI DIRI ANDA SENDIRI.")
         st.balloons()
@@ -251,7 +324,6 @@ else:
         st.markdown("### 🏆 SIKLUS 90 HARI SELESAI")
         st.write("Silakan bagikan keberhasilan Anda atau mulai tantangan fokus baru.")
         
-        # Penempatan tombol berdampingan secara mobile-friendly
         col_end1, col_end2 = st.columns(2)
         with col_end1:
             whatsapp_msg = "Saya telah berhasil menjadi orang yang konsisten! %23RESET90Days"
@@ -270,10 +342,13 @@ else:
         current_score = state['score']
         duration = LEVELS[lvl]['days']
         
-        # Likert Progress
-        render_likert_progress(lvl)
+        # 1. UI Stepper Progress Bar (Mirip Lampiran Gambar)
+        render_connected_stepper(lvl)
         
-        # Metrik Passing Grade & Skor Kelulusan
+        # 2. UI Banner Progress Hari yang Eye-Catching
+        render_eye_catching_progress(day_t, duration)
+        
+        # 3. Metrik Skor & Target Lulus
         max_lvl_score = duration * REWARD
         passing_grade = int(0.75 * max_lvl_score)
         
@@ -284,13 +359,12 @@ else:
         with col_m2:
             st.metric("Target Lulus", f"{passing_grade} pts", delta=f"Max: {max_lvl_score}", delta_color="off")
             
-        st.markdown(f"<div style='text-align:center; font-size: 14px; margin-top: -10px; margin-bottom: 20px;'><b>Progres:</b> Hari ke-{day_t} dari {duration} Hari</div>", unsafe_allow_html=True)
-        
-        # Panel Eksekusi Tombol Utama
+        # 4. Panel Eksekusi Tombol Utama
         now = datetime.datetime.now(WIB)
         today = now.date()
         is_time_valid = datetime.time(20, 0) <= now.time() <= datetime.time(23, 0)
         
+        st.markdown("<hr style='margin-top: 10px; margin-bottom: 20px;'>", unsafe_allow_html=True)
         st.markdown("### ⏳ PANEL EKSEKUSI")
         
         if state['last_date'] >= today:
@@ -314,7 +388,7 @@ else:
 
         st.markdown("---")
         
-        # Visualisasi Grafik
+        # 5. Visualisasi Grafik
         st.markdown("### 📈 TREN SKOR LEVEL INI")
         conn = sqlite3.connect(DB_NAME)
         df_logs = pd.read_sql_query("SELECT day, score FROM logs WHERE level=?", conn, params=(lvl,))
@@ -334,7 +408,7 @@ else:
         else:
             st.info("Belum ada data eksekusi di level ini.")
 
-    # Social Share khusus Mid-level (jika lulus lvl 4 dengan kualifikasi khusus)
+    # Social Share khusus Mid-level
     if st.session_state.get('show_share', False) and not state['completed']:
         st.success("🎉 SELAMAT! Lulus Level Tinggi.")
         if st.button("📢 Bagikan Pencapaian (Social Share)", use_container_width=True):
