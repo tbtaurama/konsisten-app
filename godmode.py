@@ -8,7 +8,7 @@ import streamlit as st
 # ==========================================
 # KONFIGURASI SISTEM & ATURAN BISNIS
 # ==========================================
-st.set_page_config(page_title="RESET - Pro Mobile", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="RESET - Pro Mobile v9", layout="centered", initial_sidebar_state="collapsed")
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -20,9 +20,7 @@ LEVELS = {
     5: {"days": 45}
 }
 REWARD = 10
-PENALTY_BASE = 10
-PENALTY_MULTIPLIER = 2
-DB_NAME = "reset_v8.db"
+DB_NAME = "reset_v9.db" # Database versi baru untuk pembaruan skema penalti
 
 # ==========================================
 # DATABASE SETUP
@@ -44,6 +42,16 @@ def hard_reset_db():
     conn.commit()
     conn.close()
     init_db()
+
+def reset_challenge_only():
+    """Menghapus data konten untuk fitur Ganti Tantangan tanpa merusak struktur db"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.execute("DELETE FROM profile")
+    conn.execute("DELETE FROM state")
+    conn.execute("DELETE FROM logs")
+    conn.execute("DELETE FROM badges")
+    conn.commit()
+    conn.close()
 
 init_db()
 
@@ -92,7 +100,8 @@ def advance_one_day(target_date, status):
     if status == 'checked_in':
         score += REWARD
     else:
-        penalty = PENALTY_BASE + (PENALTY_MULTIPLIER * day_t)
+        # REVISI SKEMA PENALTI: Murni menggunakan variabel hari berjalan dikali 2 (t x 2)
+        penalty = day_t * 2
         score = max(0, score - penalty)
         
     conn = sqlite3.connect(DB_NAME)
@@ -155,7 +164,6 @@ def process_missed_days():
 # KOMPONEN VISUAL KHUSUS (MOBILE FRIENDLY)
 # ==========================================
 def render_likert_progress(current_lvl):
-    """Render Likert Scale menggunakan CSS Flexbox agar pas di Mobile"""
     css = """
     <style>
     @keyframes pulse { 0% {transform: scale(1); opacity:1;} 50% {transform: scale(1.2); opacity:0.7;} 100% {transform: scale(1); opacity:1;} }
@@ -173,7 +181,6 @@ def render_likert_progress(current_lvl):
         else: icon, cls = "⚪", ""
         html += f"<div class='likert-item'><div class='likert-icon {cls}'>{icon}</div><div class='likert-label'>L{i}</div></div>"
     html += "</div>"
-    
     st.markdown(css + html, unsafe_allow_html=True)
 
 def get_prev_score(lvl, current_day):
@@ -201,7 +208,8 @@ if not profile:
         name = st.text_input("Nama Panggilan")
         theme = st.selectbox("Tema", ["Olah Raga", "Membuat Karya", "Wirausaha (Bisnis)", "Belajar/Membaca", "Mengerjakan Proyek", "Tugas Sekolah", "Cari Pekerjaan Baru", "Orang Tua & Anak", "Lainnya"])
         goal = st.text_input("Tujuan (Maks 100 Karakter)", max_chars=100)
-        if st.form_submit_button("INISIASI PROTOKOL", use_container_width=True) and name and goal:
+        # REVISI: Mengubah kata tombol menjadi "SUBMIT"
+        if st.form_submit_button("SUBMIT", use_container_width=True) and name and goal:
             save_profile(name, theme, goal)
             st.rerun()
 else:
@@ -230,24 +238,42 @@ else:
             st.rerun()
 
     # ----------------------------------------
-    # MAIN DASHBOARD (MOBILE FRIENDLY)
+    # MAIN DASHBOARD 
     # ----------------------------------------
     st.caption(f"AGENT: **{name.upper()}** | SEKTOR: **{theme.upper()}**")
     st.markdown(f"<h4 style='color: #aaa; margin-bottom: 20px;'><i>\"{goal}\"</i></h4>", unsafe_allow_html=True)
     
+    # REVISI: KONDISI SELESAI LEVEL 5 TOTAL (90 HARI)
     if state['completed']:
         st.success("🏁 PROTOKOL SELESAI. ANDA TELAH MENGUASAI DIRI ANDA SENDIRI.")
         st.balloons()
+        
+        st.markdown("### 🏆 SIKLUS 90 HARI SELESAI")
+        st.write("Silakan bagikan keberhasilan Anda atau mulai tantangan fokus baru.")
+        
+        # Penempatan tombol berdampingan secara mobile-friendly
+        col_end1, col_end2 = st.columns(2)
+        with col_end1:
+            whatsapp_msg = "Saya telah berhasil menjadi orang yang konsisten! %23RESET90Days"
+            wa_url = f"https://api.whatsapp.com/send?text={whatsapp_msg}"
+            st.link_button("📢 Social Share", wa_url, use_container_width=True, type="primary")
+            
+        with col_end2:
+            if st.button("🔄 Ganti Tantangan", use_container_width=True, type="secondary"):
+                reset_challenge_only()
+                st.rerun()
+        st.stop()
+        
     else:
         lvl = state['level']
         day_t = state['day']
         current_score = state['score']
         duration = LEVELS[lvl]['days']
         
-        # 1. LIKERT PROGRESS (Fit untuk HP)
+        # Likert Progress
         render_likert_progress(lvl)
         
-        # 2. METRIK UTAMA & SYARAT LULUS
+        # Metrik Passing Grade & Skor Kelulusan
         max_lvl_score = duration * REWARD
         passing_grade = int(0.75 * max_lvl_score)
         
@@ -260,7 +286,7 @@ else:
             
         st.markdown(f"<div style='text-align:center; font-size: 14px; margin-top: -10px; margin-bottom: 20px;'><b>Progres:</b> Hari ke-{day_t} dari {duration} Hari</div>", unsafe_allow_html=True)
         
-        # 3. PANEL EKSEKUSI (TOMBOL UTAMA)
+        # Panel Eksekusi Tombol Utama
         now = datetime.datetime.now(WIB)
         today = now.date()
         is_time_valid = datetime.time(20, 0) <= now.time() <= datetime.time(23, 0)
@@ -275,7 +301,6 @@ else:
             else:
                 st.warning("🔒 Arena Tertutup. Tunggu pukul 20:00 - 23:00 WIB.")
                 
-            # Tombol Check-in dan Bolos selalu tampil, tapi dikunci jika di luar jam
             col_b1, col_b2 = st.columns(2)
             lbl_in = "🔥 CHECK-IN" if is_time_valid else "🔒 CHECK-IN"
             lbl_ms = "❌ BOLOS" if is_time_valid else "🔒 BOLOS"
@@ -289,7 +314,7 @@ else:
 
         st.markdown("---")
         
-        # 4. VISUALISASI CHART BERSIH
+        # Visualisasi Grafik
         st.markdown("### 📈 TREN SKOR LEVEL INI")
         conn = sqlite3.connect(DB_NAME)
         df_logs = pd.read_sql_query("SELECT day, score FROM logs WHERE level=?", conn, params=(lvl,))
@@ -309,8 +334,8 @@ else:
         else:
             st.info("Belum ada data eksekusi di level ini.")
 
-    # 5. SOCIAL & BADGE
-    if st.session_state.get('show_share', False):
+    # Social Share khusus Mid-level (jika lulus lvl 4 dengan kualifikasi khusus)
+    if st.session_state.get('show_share', False) and not state['completed']:
         st.success("🎉 SELAMAT! Lulus Level Tinggi.")
         if st.button("📢 Bagikan Pencapaian (Social Share)", use_container_width=True):
             st.code("Saya telah berhasil menjadi orang yang konsisten! #RESET90Days", language="markdown")
