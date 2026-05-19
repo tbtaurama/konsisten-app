@@ -8,7 +8,7 @@ import streamlit as st
 # ==========================================
 # KONFIGURASI SISTEM & ATURAN BISNIS
 # ==========================================
-st.set_page_config(page_title="RESET - QA Mode", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="RESET - QA Mode v2", layout="centered", initial_sidebar_state="expanded")
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -22,7 +22,7 @@ LEVELS = {
 REWARD = 10
 PENALTY_BASE = 10
 PENALTY_MULTIPLIER = 2
-DB_NAME = "reset_qa.db" # Menggunakan DB baru agar bersih
+DB_NAME = "reset_qa_v2.db" # Database baru untuk pengujian aturan Sudden Death
 
 # ==========================================
 # DATABASE SETUP
@@ -38,7 +38,6 @@ def init_db():
     conn.close()
 
 def hard_reset_db():
-    """Fungsi QA: Menghancurkan seluruh data dan mengembalikan ke titik nol."""
     conn = sqlite3.connect(DB_NAME)
     conn.execute("DROP TABLE IF EXISTS profile")
     conn.execute("DROP TABLE IF EXISTS state")
@@ -85,47 +84,58 @@ def advance_one_day(target_date, status):
     day_t = state['day']
     score = state['score']
     duration = LEVELS[lvl]['days']
+    max_score = duration * REWARD
+    passing_grade = 0.75 * max_score
     
-    # 1. Kalkulasi
+    # 1. Kalkulasi Aksi Harian
     if status == 'checked_in':
         score += REWARD
     else:
         penalty = PENALTY_BASE + (PENALTY_MULTIPLIER * day_t)
         score = max(0, score - penalty)
         
-    # 2. Catat Log
+    # LOGIKA SUDDEN DEATH & PREDIKSI MATEMATIS
+    remaining_days_after = duration - day_t
+    harapan_final = score + (remaining_days_after * REWARD)
+    
+    if harapan_final < passing_grade:
+        # EKSEKUSI RESET TOTAL (Sudden Death atau Gagal Normal di akhir)
+        conn = sqlite3.connect(DB_NAME)
+        conn.execute("DELETE FROM logs WHERE level=?", (lvl,)) # Bersihkan visual grafik
+        conn.execute("UPDATE state SET current_day=1, score=0, last_processed_date=? WHERE id=1", (target_date.isoformat(),))
+        conn.commit()
+        conn.close()
+        
+        if remaining_days_after > 0:
+            st.session_state['qa_alert'] = "💀 **SUDDEN DEATH TRIGGERED!** Skor maksimal yang bisa Anda raih sudah tidak dapat mengejar syarat kelulusan. Anda dikembalikan ke Hari 1 tanpa menyelesaikan level."
+        else:
+            st.session_state['qa_alert'] = f"❌ **GAGAL DI LEVEL {lvl}**: Skor akhir Anda di bawah Passing Grade. Anda dikembalikan ke Hari 1."
+        return # Hentikan proses, kembali ke hari 1
+        
+    # 2. Catat Log Harian (Hanya jika lolos Sudden Death)
     conn = sqlite3.connect(DB_NAME)
     conn.execute("INSERT OR REPLACE INTO logs VALUES (?, ?, ?, ?, ?)", (target_date.isoformat(), lvl, day_t, status, score))
     
     just_graduated = False
     
-    # 3. Evaluasi Akhir Level
+    # 3. Evaluasi Lulus Level
     if day_t == duration:
-        max_score = duration * REWARD
-        passing_grade = 0.75 * max_score
+        # Pasti lolos karena sudah di-filter oleh logika Sudden Death di atas
+        pct = score / max_score
+        badge_type = "Umum 🥉"
+        if lvl in [4, 5]:
+            if pct == 1.0: badge_type = "Platinum 👑"
+            elif pct >= 0.9: badge_type = "Premium 🌟"
         
-        if score >= passing_grade:
-            # LULUS
-            pct = score / max_score
-            badge_type = "Umum 🥉"
-            if lvl in [4, 5]:
-                if pct == 1.0: badge_type = "Platinum 👑"
-                elif pct >= 0.9: badge_type = "Premium 🌟"
-            
-            conn.execute("INSERT OR REPLACE INTO badges VALUES (?, ?)", (lvl, badge_type))
-            if lvl in [4, 5] and pct >= 0.9: just_graduated = True
-            
-            if lvl < 5:
-                lvl += 1
-                day_t = 1
-                score = 0
-            else:
-                conn.execute("UPDATE state SET completed=1 WHERE id=1")
-        else:
-            # GAGAL - Reset ke Hari 1 di level yang sama
+        conn.execute("INSERT OR REPLACE INTO badges VALUES (?, ?)", (lvl, badge_type))
+        if lvl in [4, 5] and pct >= 0.9: just_graduated = True
+        
+        if lvl < 5:
+            lvl += 1
             day_t = 1
             score = 0
-            st.session_state['qa_alert'] = f"❌ GAGAL DI LEVEL {lvl}! Mengulang dari hari pertama."
+        else:
+            conn.execute("UPDATE state SET completed=1 WHERE id=1")
     else:
         day_t += 1
         
@@ -152,7 +162,7 @@ def process_missed_days():
 # ==========================================
 st.markdown("<style>h1, h2, h3 {text-align: center;}</style>", unsafe_allow_html=True)
 
-# Tampilkan alert QA jika ada
+# Notifikasi Sudden Death / Reset
 if 'qa_alert' in st.session_state:
     st.error(st.session_state['qa_alert'])
     del st.session_state['qa_alert']
@@ -160,8 +170,8 @@ if 'qa_alert' in st.session_state:
 profile = get_profile()
 
 if not profile:
-    st.title("⬛ R E S E T [QA]")
-    st.write("Silakan isi data asal untuk masuk ke mode testing.")
+    st.title("⬛ R E S E T [QA V2]")
+    st.write("Silakan inisiasi protokol baru.")
     with st.form("onboarding"):
         name = st.text_input("Nama Panggilan")
         theme = st.selectbox("Tema", ["Olah Raga", "QA Testing", "Lainnya"])
@@ -175,12 +185,10 @@ else:
     state = get_state()
     
     # ----------------------------------------
-    # SIDEBAR: QA / GOD MODE CONTROLS
+    # SIDEBAR: QA / GOD MODE
     # ----------------------------------------
     with st.sidebar:
         st.error("🛠️ **QA / GOD MODE**")
-        st.caption("Bypass waktu dan paksa eksekusi harian ke depan tanpa batas.")
-        
         if not state['completed']:
             next_sim_date = state['last_date'] + datetime.timedelta(days=1)
             st.write(f"**Target Injeksi:** Hari ke-{state['day']} (Level {state['level']})")
@@ -194,14 +202,9 @@ else:
                 st.rerun()
         
         st.markdown("---")
-        st.write("🔧 **Tools Ekstrem**")
         if st.button("♻️ Nuke/Reset Database", use_container_width=True):
             hard_reset_db()
             st.rerun()
-            
-        st.markdown("---")
-        st.write("🔍 **Raw State JSON:**")
-        st.json({"Level": state['level'], "Day": state['day'], "Score": state['score'], "Last_Date": str(state['last_date'])})
 
     # ----------------------------------------
     # MAIN DASHBOARD
@@ -218,17 +221,43 @@ else:
         day_t = state['day']
         current_score = state['score']
         duration = LEVELS[lvl]['days']
+        passing_grade = int(0.75 * duration * REWARD)
         
+        # Kalkulasi Harapan Skor (Peluang Tersisa)
+        sisa_hari_potensial = duration - day_t + 1
+        harapan_skor_final = current_score + (sisa_hari_potensial * REWARD)
+        
+        # UI: STATUS PROGRESS
         col1, col2 = st.columns(2)
         col1.metric("LEVEL SAAT INI", f"Level {lvl} ({duration} Hari)")
         col2.metric("PROGRES LEVEL", f"Hari {day_t} / {duration}")
         
-        # LOGIKA UI ASLI (Disembunyikan ketajamannya oleh QA Tool)
+        # UI: VISUALISASI POIN SAAT INI (FEATURE BARU)
+        st.markdown("### 📊 METRIK PERFORMA")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Skor Saat Ini", current_score)
+        m2.metric("Passing Grade", passing_grade)
+        
+        # Logika Delta Indikator Warna
+        delta_val = harapan_skor_final - passing_grade
+        if delta_val >= 10:
+            delta_str = f"Aman (+{delta_val})"
+            d_color = "normal"
+        elif delta_val >= 0:
+            delta_str = f"Kritis (+{delta_val})"
+            d_color = "off"
+        else:
+            delta_str = "Gagal"
+            d_color = "inverse"
+            
+        m3.metric("Harapan Skor Final", harapan_skor_final, delta=delta_str, delta_color=d_color)
+        
+        # KONTROL WAKTU (PANEL EKSEKUSI)
         now = datetime.datetime.now(WIB)
         today = now.date()
         
         st.write("")
-        st.markdown("### ⏳ PANEL EKSEKUSI (USER VIEW)")
+        st.markdown("### ⏳ PANEL EKSEKUSI")
         if state['last_date'] >= today:
             st.success("✔️ Eksekusi harian dikonfirmasi (Atau disimulasi oleh QA).")
         else:
@@ -242,13 +271,11 @@ else:
 
         st.markdown("---")
         
-        # VISUALISASI
+        # VISUALISASI GRAFIK
         st.markdown("### 📈 TREN SKOR LEVEL INI")
         conn = sqlite3.connect(DB_NAME)
         df_logs = pd.read_sql_query("SELECT day, score FROM logs WHERE level=?", conn, params=(lvl,))
         conn.close()
-        
-        passing_grade = 0.75 * (duration * REWARD)
         
         if not df_logs.empty:
             if not (state['last_date'] >= today and df_logs['day'].max() == day_t):
@@ -262,9 +289,7 @@ else:
             rule = alt.Chart(pd.DataFrame({'y': [passing_grade]})).mark_rule(color='red', strokeDash=[5, 5], strokeWidth=2).encode(y='y:Q')
             st.altair_chart((base_chart + rule).properties(height=300), use_container_width=True)
         else:
-            st.info("Belum ada data eksekusi di level ini.")
-            
-        st.caption(f"Syarat Lulus: {int(passing_grade)} Poin dari {duration * REWARD} Maksimal.")
+            st.info("Grafik telah di-reset. Lintasan kosong dan siap untuk eksekusi baru.")
 
     # SOCIAL & BADGE
     if st.session_state.get('show_share', False):
