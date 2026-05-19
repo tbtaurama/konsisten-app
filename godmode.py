@@ -12,7 +12,7 @@ st.set_page_config(page_title="RESET - Pro Mobile v11", layout="centered", initi
 
 WIB = ZoneInfo("Asia/Jakarta")
 
-# REVISI: Level dipangkas hanya sampai Level 3
+# REVISI: Hanya 3 Level
 LEVELS = {
     1: {"days": 3},
     2: {"days": 7},
@@ -120,7 +120,7 @@ def advance_one_day(target_date, status):
         if score >= passing_grade:
             pct = score / max_score
             badge_type = "Umum 🥉"
-            # Hadiah premium sekarang dialihkan ke Level 3 karena ini adalah level akhir
+            # REVISI: Mengubah syarat badge tinggi khusus untuk Level 3 (Karena sekarang level maksimalnya 3)
             if lvl == 3:
                 if pct == 1.0: badge_type = "Platinum 👑"
                 elif pct >= 0.9: badge_type = "Premium 🌟"
@@ -128,7 +128,7 @@ def advance_one_day(target_date, status):
             conn.execute("INSERT OR REPLACE INTO badges VALUES (?, ?)", (lvl, badge_type))
             if lvl == 3 and pct >= 0.9: just_graduated = True
             
-            # Pengecekan batas level diubah ke Level 3
+            # REVISI: Hanya naik level jika level < 3
             if lvl < 3:
                 lvl += 1
                 day_t = 1
@@ -160,39 +160,28 @@ def process_missed_days():
         last_date = target_missed_date
 
 # ==========================================
-# KOMPONEN VISUAL KHUSUS (REVERTED & MOBILE)
+# KOMPONEN VISUAL (LIKERT KEMBALI)
 # ==========================================
 def render_likert_progress(current_lvl):
-    """Render Skala Progress Bar Lama (titik berkedip) disesuaikan untuk 3 Level"""
     css = """
     <style>
     @keyframes pulse { 0% {transform: scale(1); opacity:1;} 50% {transform: scale(1.2); opacity:0.7;} 100% {transform: scale(1); opacity:1;} }
     .pulsing { animation: pulse 1.5s infinite; display: inline-block; }
-    .likert-container { display: flex; justify-content: space-around; align-items: center; max-width: 300px; margin: 0 auto 15px auto; padding: 10px; background-color: #1e1e1e; border-radius: 10px; }
+    .likert-container { display: flex; justify-content: space-around; align-items: center; max-width: 400px; margin: 0 auto 15px auto; padding: 15px 10px; background-color: #1e1e1e; border-radius: 10px; }
     .likert-item { text-align: center; }
     .likert-icon { font-size: 20px; }
     .likert-label { font-size: 12px; font-weight: bold; color: #888; margin-top: 5px; }
     </style>
     """
     html = "<div class='likert-container'>"
-    # Perulangan disesuaikan dari 5 ke 3 level
+    # REVISI: Hanya merender 3 level
     for i in range(1, 4):
         if i < current_lvl: icon, cls = "🟢", ""
         elif i == current_lvl: icon, cls = "🟡", "pulsing"
         else: icon, cls = "⚪", ""
-        html += f"<div class='likert-item'><div class='likert-icon {cls}'>{icon}</div><div class='likert-label'>L{i}</div></div>"
+        html += f"<div class='likert-item'><div class='likert-icon {cls}'>{icon}</div><div class='likert-label'>Level {i}</div></div>"
     html += "</div>"
     st.markdown(css + html, unsafe_allow_html=True)
-
-def render_eye_catching_progress(day_t, duration):
-    """Render Banner Progress Hari yang jauh lebih eye-catching"""
-    html = f"""
-    <div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 1px solid #3a62a8;">
-        <p style="margin: 0; color: #a8c2f0; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Status Perjalanan</p>
-        <h3 style="margin: 5px 0 0 0; color: white; font-size: 24px;">HARI KE-{day_t} <span style="color:#a8c2f0; font-size: 18px;">dari {duration} HARI</span></h3>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
 
 def get_prev_score(lvl, current_day):
     if current_day <= 1: return 0
@@ -257,7 +246,7 @@ else:
         st.success("🏁 PROTOKOL SELESAI. ANDA TELAH MENGUASAI DIRI ANDA SENDIRI.")
         st.balloons()
         
-        st.markdown("### 🏆 SIKLUS TANTANGAN SELESAI")
+        st.markdown("### 🏆 SELURUH LEVEL SELESAI")
         st.write("Silakan bagikan keberhasilan Anda atau mulai tantangan fokus baru.")
         
         col_end1, col_end2 = st.columns(2)
@@ -278,13 +267,10 @@ else:
         current_score = state['score']
         duration = LEVELS[lvl]['days']
         
-        # 1. UI Progress Bar Titik Berkedip (Dikembalikan)
+        # 1. UI Likert Progress Bar (Dikembalikan & hanya 3 titik)
         render_likert_progress(lvl)
         
-        # 2. UI Banner Progress Hari yang Eye-Catching (Dipertahankan)
-        render_eye_catching_progress(day_t, duration)
-        
-        # 3. Metrik Skor & Target Lulus
+        # 2. Metrik Skor & Target Lulus
         max_lvl_score = duration * REWARD
         passing_grade = int(0.75 * max_lvl_score)
         
@@ -295,12 +281,15 @@ else:
         with col_m2:
             st.metric("Target Lulus", f"{passing_grade} pts", delta=f"Max: {max_lvl_score}", delta_color="off")
             
+        # 3. Status Perjalanan Minimalis Rata Kiri
+        st.markdown(f"<div style='text-align: left; font-size: 15px; font-weight: bold; margin-top: 15px; margin-bottom: 5px; color: #e0e0e0;'>Status Perjalanan: HARI KE-{day_t} dari {duration} HARI</div>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin-top: 0px; margin-bottom: 20px;'>", unsafe_allow_html=True)
+        
         # 4. Panel Eksekusi Tombol Utama
         now = datetime.datetime.now(WIB)
         today = now.date()
         is_time_valid = datetime.time(20, 0) <= now.time() <= datetime.time(23, 0)
         
-        st.markdown("<hr style='margin-top: 10px; margin-bottom: 20px;'>", unsafe_allow_html=True)
         st.markdown("### ⏳ PANEL EKSEKUSI")
         
         if state['last_date'] >= today:
@@ -344,7 +333,13 @@ else:
         else:
             st.info("Belum ada data eksekusi di level ini.")
 
-    # Galeri Badge & Social Share (Disesuaikan untuk max 3 badge)
+    # Social Share khusus Mid-level
+    if st.session_state.get('show_share', False) and not state['completed']:
+        st.success("🎉 SELAMAT! Lulus Level Tinggi.")
+        if st.button("📢 Bagikan Pencapaian (Social Share)", use_container_width=True):
+            st.code("Saya telah berhasil menjadi orang yang konsisten! #RESET", language="markdown")
+            st.session_state['show_share'] = False
+
     st.markdown("---")
     st.markdown("### 🎖️ GALERI LENCANA")
     conn = sqlite3.connect(DB_NAME)
@@ -352,10 +347,9 @@ else:
     conn.close()
     
     if badges:
-        # Menyesuaikan menjadi 3 kolom karena maksimal hanya ada 3 level
-        cols = st.columns(3)
+        cols = st.columns(3) # REVISI: Galeri lencana disesuaikan menjadi 3 kolom
         for i, (b_lvl, b_type) in enumerate(badges):
             with cols[i % 3]:
-                st.markdown(f"<div style='text-align:center; padding:10px; border:1px solid #555; border-radius:8px; font-size:14px;'><b>Lvl {b_lvl}</b><br>{b_type}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align:center; padding:5px; border:1px solid #555; border-radius:5px; font-size:12px;'><b>Lvl {b_lvl}</b><br>{b_type}</div>", unsafe_allow_html=True)
     else:
         st.caption("Belum ada lencana yang diraih.")
